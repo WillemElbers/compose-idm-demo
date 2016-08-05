@@ -1,0 +1,51 @@
+version: '2'
+services:
+  unity-idm:
+    image: docker.clarin.eu/unity-idm:1.1.0
+    networks:
+      - idm_demo_network
+    ports:
+      - 2443:2443
+      - 10000:10000
+      - 10443:10443
+    volumes:
+      - unity_idm_data:/opt/unity/data:rw
+
+  owncloud:
+    environment:
+      DATABASE_USER: owncloud
+      DATABASE_NAME: owncloud_db
+      OWNCLOUD_ADMIN: admin
+      LDAP_HOST: 172.28.5.254
+      LDAP_PORT: 10000
+      LDAP_USER_DN: uid=admin,ou=system
+      LDAP_BASE_DN: ou=system
+    image: docker.clarin.eu/owncloud:1.0.0
+    volumes:
+      - /Users/wilelb/idm_demo_secrets:/opt/.secrets
+    networks:
+      - idm_demo_network
+    ports:
+      - 80:80
+      - 443:443
+    volumes:
+      - mysql_data:/var/lib/mysql:rw
+      - owncloud_data:/var/www/html/owncloud:rw
+      
+volumes:
+  mysql_data:
+    external: false
+  owncloud_data:
+    external: false
+  unity_idm_data:
+    external: false
+
+networks:
+  idm_demo_network:
+    external: false
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.28.0.0/16
+          ip_range: 172.28.5.0/24
+          gateway: 172.28.5.254
