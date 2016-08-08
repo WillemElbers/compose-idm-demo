@@ -1,6 +1,8 @@
 version: '2'
 services:
   unity-idm:
+    environment:
+      HOST: unity-idm
     image: docker.clarin.eu/unity-idm:1.1.0
     networks:
       - idm_demo_network
@@ -31,7 +33,13 @@ services:
     volumes:
       - mysql_data:/var/lib/mysql:rw
       - owncloud_data:/var/www/html/owncloud:rw
-      
+
+  shibboleth-sp:
+    image: shibboleth/sp-demo:1.0.0
+    ports:
+      - 81:80
+      - 444:443
+
 volumes:
   mysql_data:
     external: false
