@@ -49,21 +49,56 @@ _WARNING_: this will remove all data, including any customization you have made.
 
 # Finalizing the setup
 
-## 1. Exchange SAML metadata
+## 1. Update hosts file
 
-The unity-idm SAML IDP and shibboleth Service Provider must exchange metadata. Run the following commands:
+Add the following to your hosts file (`/etc/hosts`):
 
 ```
-docker-compose -p idm-demo exec shibboleth-sp /opt/download-metadata.sh && 
-docker-compose -p idm-demo exec unity-idm /opt/download-metadata.sh
+127.0.0.1 unity-idm
+127.0.0.1 shibboleth-sp
+127.0.0.1 owncloud
+```	
+
+## 2. Configure unity registration form
+
+<todo>
+
+## 3. Register test user
+
+<todo>
+
+## 4	. Test
+
+Access:
+
+```
+https://shibboleth-sp/debugger
 ```
 
-These commands will download the metadata files and restart the IDP and SP service so that the new metadata is loaded.
+Login to owncloud:
+```
+https://owncloud:81
+```
 
-## 2. Update unity admin password
+# SAML Metadata Exchange process
 
-The first thing that needs to be done if all services are running is the set a new password for your unity admin account.
+Entrypoint of the unity-idm container is a shell script which:
 
-* goto https://localhost:2443/admin/admin
-* Login with your admin account
-* You will be prompted to update your credential, so update it and relogin	
+1. Waits for the SP metadata endpoint to become available
+2. Downloads SP metadata
+3. Starts supervisord in the foreground, which in turn starts unity-idm
+
+Entrypoint in the shibboleth-sp container is the command to run supervisord in the foreground which:
+
+1. Starts apache, tomcat, shibd and the download-metadata.sh script
+2. The download-metadata.sh waits for the IDP metadata endpoint to become available
+3. Downloads the IDP metadata
+4. Restarts unity-idm
+
+This setup ensures that the IDP (unity-idm) always downloads the SP metadata first before starting and as soon as the IDP is running, the SP will download the IDP metadata and restart. This completes the metadata exchange and establishes the trust relationship between IDP and SP.
+
+# Debugging
+
+```
+ssh -f test@127.0.0.1 -L 5000:127.0.0.1:4000 -N -p 9000
+```

@@ -2,53 +2,54 @@ version: '2'
 services:
   unity-idm:
     environment:
-      HOST: unity-idm
+      HOST: unity-idm:2443
     image: docker.clarin.eu/unity-idm:1.1.0
     networks:
       idm_demo_network:
         aliases:
           - idp
     ports:
-      - 2443:2443
-      - 10000:10000
-      - 10443:10443
+      - "2443:2443"
+      - "10000:10000"
+      - "10443:10443"
+      - "9000:22"
     volumes:
       - unity_idm_data:/opt/unity/data:rw
       - saml_metadata:/data/metadata:rw
 
-  owncloud:
-    environment:
-      DATABASE_USER: owncloud
-      DATABASE_NAME: owncloud_db
-      OWNCLOUD_ADMIN: admin
-      LDAP_HOST: 172.28.5.254
-      LDAP_PORT: 10000
-      LDAP_USER_DN: uid=admin,ou=system
-      LDAP_BASE_DN: ou=system
-    image: docker.clarin.eu/owncloud:1.0.0
-    volumes:
-      - /Users/wilelb/idm_demo_secrets:/opt/.secrets
-      - owncloud_initialisation:/opt/initialisation:rw
-    networks:
-      - idm_demo_network
-    ports:
-      - 80:80
-      - 443:443
-    volumes:
-      - mysql_data:/var/lib/mysql:rw
-      - owncloud_data:/var/www/html/owncloud:rw
-
   shibboleth-sp:
     image: shibboleth/sp-demo:1.0.0
     ports:
-      - 81:80
-      - 444:443
+      - "80:80"
+      - "443:443"
+      - "8081:8080"
     volumes:
       - saml_metadata:/data/metadata:rw
     networks:
       idm_demo_network:
         aliases:
           - sp
+
+  owncloud:
+    environment:
+      DATABASE_USER: owncloud
+      DATABASE_NAME: owncloud_db
+      OWNCLOUD_ADMIN: admin
+      LDAP_HOST: unity-idm
+      LDAP_PORT: 10000
+      LDAP_USER_DN: uid=admin,ou=system
+      LDAP_BASE_DN: ou=system
+    image: docker.clarin.eu/owncloud:1.0.0
+    networks:
+      - idm_demo_network
+    ports:
+      - "81:80"
+      - "444:443"
+    volumes:
+      - mysql_data:/var/lib/mysql/:rw
+      - owncloud_data:/var/www/html/:rw
+      - owncloud_initialisation:/opt/initialisation/:rw
+      - /Users/wilelb/idm_demo_secrets:/opt/.secrets:rw
 
 volumes:
   mysql_data:
