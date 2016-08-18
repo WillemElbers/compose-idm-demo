@@ -46,13 +46,53 @@ services:
       - "81:80"
       - "444:443"
     volumes:
-      - mysql_data:/var/lib/mysql/:rw
-      - owncloud_data:/var/www/html/:rw
+      - owncloud_mysql_data:/var/lib/mysql/:rw
+      #- owncloud_data:/var/www/html/:rw
       - owncloud_initialisation:/opt/initialisation/:rw
       - /Users/wilelb/idm_demo_secrets:/opt/.secrets:rw
+      - /Users/wilelb/Code/work/clarin/git/owncloud/debug/owncloud/apps/user_ldap/lib:/var/www/html/apps/user_ldap/lib:rw
+
+  website:
+    command: |
+      -ecx "dumb-init --single-child httpd -D FOREGROUND"
+    entrypoint: /bin/sh
+    depends_on:
+      - mariadb
+    image: "docker.clarin.eu/alpine-apache-drupal:0.8.2-0-g4112bc7"
+    networks:
+      - idm_demo_network
+    ports:
+      - "82:80"
+      - "445:443"
+    tmpfs:
+      - "/tmp/:rw,noatime,nodev,noexec,mode=1777"
+      - "/run/apache2/:rw,gid=101,mode=700,noatime,nodev,noexec,uid=100"
+    read_only: true
+    user: "100:82"
+    volumes:
+      - "website_httpd_htdocs:/var/www/localhost/htdocs/:rw"
+      - "website_httpd_dynamic_cfg:/var/www/dynamic_cfg/:ro"
+      - "website_httpd_certstore:/var/www/TLS_key_store/:ro"
+    working_dir: "/var/www/localhost/htdocs/"
+
+  mariadb:
+    environment:
+      MYSQL_DATABASE:
+      MYSQL_PASSWORD:
+      MYSQL_ROOT_PASSWORD:
+      MYSQL_USER:
+    networks:
+      - idm_demo_network
+    image: "mariadb:10.1.16"
+    tmpfs: "/tmp/:rw,noatime,nodev,noexec,mode=1777"
+    tmpfs: "/run/:rw,noatime,nodev,noexec,mode=700"
+    tmpfs: "/run/mysqld/:rw,gid=999,mode=700,noatime,nodev,noexec,uid=999"
+    volumes:
+      - "var_mariadb:/var/lib/mysql/:rw"
+    working_dir: "/var/lib/mysql/"
 
 volumes:
-  mysql_data:
+  owncloud_mysql_data:
     external: false
   owncloud_data:
     external: false
@@ -61,6 +101,14 @@ volumes:
   unity_idm_data:
     external: false
   saml_metadata:
+    external: false
+  website_httpd_dynamic_cfg:
+    external: false
+  website_httpd_htdocs:
+    external: false
+  website_httpd_certstore: #Managed via initialiser
+    external: true
+  var_mariadb:
     external: false
 
 networks:

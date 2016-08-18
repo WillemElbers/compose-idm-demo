@@ -16,8 +16,25 @@ The docker containers are setup as follows:
 
 ```
               *****************
-         http * Owncloud      * <---------+
-              *****************           |      
+         http * trac          * >---------+
+              *****************           |
+                                          |
+              *****************           |
+          ??? * svn           * >---------+ 
+              *****************           |
+                                          |
+              *****************           |
+              *               * >---------+
+         http * website       * >---+     |
+              *****************     |     |
+                                    |     |
+              *****************     |     |
+              * mariadb       * <---+     |
+              *****************           |
+                                          |
+       webdav *****************           |
+         http * Owncloud      * >---------+
+      desktop *****************           |      
                                          ldap (10000 / 10443)     
               *****************           |
               *               * <---------+ 
@@ -26,23 +43,40 @@ The docker containers are setup as follows:
               *****************           |
                                          saml
               *****************           |     
-        https * Shibboleth SP * <---------+
+        https * Shibboleth SP * >---------+
               *****************                      
 ```
 
 # Run the demo
 
+## Initialisation
+
+If you are starting from scratch (no volumes), a one time initialisation step is needed to generate the certificate and 
+ssl parameters for the website:
+
+```
+sh -ace '. "./prod.sh" ; docker-compose -f initialise.yml -p idm-demo up'
+```
+
+## Running the services
+
 This is a list of commands used to manage the demo environment:
 
 ```
-docker-compose -p idm-demo up             # Create and start all services
-docker-compose -p idm-demo down           # Stop and remove all services
+# Create and start all services
+sh -ace '. "./prod.sh" ; docker-compose -p idm-demo up'
+
+# Stop and remove all services
+docker-compose -p idm-demo down           
 ```
+
+## Remove everything
 
 If you want to reset to a clean state and remove all docker volumes, run:
 
 ```
-docker-compose -p idm-demo down -v        # Stop and remove all services, including volumes!
+# Stop and remove all services, including volumes!
+docker-compose -p idm-demo down -v        
 ```
 
 _WARNING_: this will remove all data, including any customization you have made.
