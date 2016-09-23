@@ -1,7 +1,7 @@
 version: '2'
 services:
 
-  website_preparer:
+  certificate_preparer:
     command: |
       -ecx "
       echo '[req]' >> /tmp/apache.cert.conf
@@ -18,21 +18,196 @@ services:
       echo 'commonName=localhost' >> /tmp/apache.cert.conf
       echo '[alt_names]' >> /tmp/apache.cert.conf
       echo 'DNS.1 = localhost' >> /tmp/apache.cert.conf
-      openssl req -config /tmp/apache.cert.conf -new -x509 -days 365 -keyout /var/www/TLS_key_store/private_nopass.key -out /var/www/TLS_key_store/bundle.pem
+      test ! -e /var/www/TLS_key_store/bundle.pem && openssl req -config /tmp/apache.cert.conf -new -x509 -days 365 -keyout /var/www/TLS_key_store/private_nopass.key -out /var/www/TLS_key_store/bundle.pem
       rm /tmp/apache.cert.conf
-      openssl dhparam -out /var/www/TLS_key_store/dhparam.pem 4096
+      test ! -e /var/www/TLS_key_store/dhparam.pem && openssl dhparam -out /var/www/TLS_key_store/dhparam.pem 4096
       chmod a=,u=rwX -Rc -- /var/www/TLS_key_store/
-      chown apache:apache -Rc -- /var/www/TLS_key_store/"
+      chown apache:apache -Rc -- /var/www/TLS_key_store/
+      echo "done" >> /var/www/TLS_key_store/initialised"
     image: "docker.clarin.eu/alpine-apache-drupal:0.8.2-0-g4112bc7"
-    extra_hosts:
-      - "clarin.eu:127.0.0.1"
     entrypoint: /bin/sh
     tmpfs:
       - "/tmp/:rw,noatime,nodev,noexec,mode=1777"
       - "/run/apache2/:rw,gid=101,mode=700,noatime,nodev,uid=100"
     volumes:
-      - "website_httpd_certstore:/var/www/TLS_key_store/:rw"
+      - "tls_certstore:/var/www/TLS_key_store/:rw"
+
+  httpd_preparer:
+    command: |
+      -ecx "
+      while  [ ! -f  '/var/www/TLS_key_store/initialised' ]; do echo 'waiting for certificate generation'; sleep 5; done
+      while ! echo exit | nc ${MARIADB_HOST} 3306 </dev/null; do echo 'waiting for database to become available'; sleep 1; done
+      mutate_dynamic_httpd_cfg.py
+      find / -maxdepth 1 -type f -size 0 -delete
+      restore_drupal.py
+      unset -v -- MARIADB_HOST MYSQL_DATABASE MYSQL_PASSWORD MYSQL_USER
+      mutate_dynamic_httpd_cfg.py
+      httpd -e DEBUG -X &
+      sleep 2"
+    depends_on:
+      - mariadb
+      - certificate_preparer
+    image: "docker.clarin.eu/alpine-apache-drupal:0.8.2-0-g4112bc7"
+    extra_hosts:
+      - "${_SERVERNAME}:127.0.0.1"
+      - "website.localdomain:127.0.0.1"
+      - "clarin.eu:127.0.0.1"
+    entrypoint: /bin/sh
+    environment:
+      MARIADB_HOST:
+      MYSQL_DATABASE:
+      MYSQL_PASSWORD:
+      MYSQL_USER:
+      _SERVERNAME:
+    networks:
+      - idm_demo_network
+    tmpfs:
+      - "/tmp/:rw,noatime,nodev,noexec,mode=1777"
+      - "/run/apache2/:rw,gid=101,mode=700,noatime,nodev,uid=100"
+    volumes:
+      - "${BACKUP_ROOT}/clarin_eric_website/database.sql:/srv/clarin_eric_website/database.sql:ro"
+      - "${BACKUP_ROOT}/clarin_eric_website/htdocs.tar.gz:/srv/clarin_eric_website/htdocs.tar.gz:ro"
+      - "${BACKUP_ROOT}/clarin_eric_website/www-clarin-eu_cfg-0.4.0.tar.gz:/srv/clarin_eric_website/www-clarin-eu_cfg-0.4.0.tar.gz:ro"
+      - "${BACKUP_ROOT}/clarin_eric_website/www-clarin-eu_src-1.0.2/:/srv/clarin_eric_website/www-clarin-eu_src/:ro"
+      - "website_httpd_htdocs:/var/www/localhost/htdocs/:rw"
+      - "website_httpd_dynamic_cfg:/var/www/dynamic_cfg/:rw"
+      - "tls_certstore:/var/www/TLS_key_store/:ro"
+
+  svn-preparer:
+    command: |
+      sh -ecx "
+      while  [ ! -f  '/var/www/TLS_key_store/initialised' ]; do echo 'waiting for certificate generation'; sleep 5; done
+      /usr/local/bin/alpine-httpd__init_entrypoint.sh
+      /usr/local/bin/alpine-httpd-subversion_trac__init_entrypoint.sh
+      /usr/local/bin/alpine-httpd-subversion_trac__SVN_init_entrypoint.sh
+      httpd -e DEBUG -D DO_SVN -t"
+    depends_on:
+      - certificate_preparer
+    environment:
+      _SERVERNAME: "svn.localdomain"
+      AUTH_LDAP_BIND_DN:
+      AUTH_LDAP_BIND_PASSWORD:
+      AUTH_LDAP_REQUIRE:
+      AUTH_LDAP_URL:
+    extra_hosts:
+      - "svn.localdomain:127.0.0.1"
+    image: "registry.gitlab.com/clarin-eric/alpine-httpd-subversion_trac:5448268b37d5aafe3c3dd52057edd199305dfd50"
+    network_mode: "none"
+    tmpfs:
+      - "/tmp/:rw,noatime,nodev,noexec,mode=1777"
+      - "/run/apache2/:rw,gid=101,mode=700,noatime,nodev,uid=100"
+    volumes:
+      - "${BACKUP_ROOT}/SVN_dump:/srv/SVN_dump"
+      - "SVN_dynamic_cfg:/var/www/dynamic_cfg/:rw"
+      - "SVN_repos:/srv/subversion/:rw"
+      - "tls_certstore:/var/www/TLS_key_store/:ro"
+    working_dir: "/srv/subversion"
+
+  mariadb:
+    environment:
+      MYSQL_DATABASE:
+      MYSQL_PASSWORD:
+      MYSQL_ROOT_PASSWORD:
+      MYSQL_USER:
+    networks:
+      - idm_demo_network
+    image: "mariadb:10.1.16"
+    tmpfs: "/tmp/:rw,noatime,nodev,noexec,mode=1777"
+    tmpfs: "/run/:rw,noatime,nodev,noexec,mode=700"
+    tmpfs: "/run/mysqld/:rw,gid=999,mode=700,noatime,nodev,noexec,uid=999"
+    volumes:
+      - "var_mariadb:/var/lib/mysql/:rw"
+    working_dir: "/var/lib/mysql/"
+
+  svn:
+    command: --single-child -- httpd -D DO_SVN -D FOREGROUND
+    extra_hosts:
+      - "svn.localdomain:127.0.0.1"
+    image: "registry.gitlab.com/clarin-eric/alpine-httpd-subversion_trac:5448268b37d5aafe3c3dd52057edd199305dfd50"
+    ports:
+      - "127.0.0.1:4431:4430"
+      - "127.0.0.1:83:8080"
+    tmpfs:
+      - "/tmp/:rw,noatime,nodev,noexec,mode=1777"
+      - "/run/apache2/:rw,gid=101,mode=700,noatime,nodev,noexec,uid=100"
+    user: "apache:www-data"
+    volumes:
+      - "SVN_dynamic_cfg:/var/www/dynamic_cfg/:ro"
+      - "SVN_repos:/srv/subversion/:rw"
+      - "tls_certstore:/var/www/TLS_key_store/:ro"
+    working_dir: "/srv/subversion"
+    networks:
+      - idm_demo_network
+
+  trac-db:
+    environment:
+      POSTGRES_PASSWORD:
+    image: "postgres:9.5.3"
+    tmpfs: "/tmp/:rw,noatime,nodev,noexec,mode=1777"
+    tmpfs: "/run/postgres:rw,noatime,nodev,noexec,mode=700"
+    volumes:
+      - "Trac_db:/var/lib/postgresql/data:rw"
+
+  trac-preparer:
+    command: |
+      sh -c 'set -ex
+      sh -x /usr/local/bin/alpine-httpd__init_entrypoint.sh
+      sh -x /usr/local/bin/alpine-httpd-subversion_trac__init_entrypoint.sh
+      sh -x /usr/local/bin/alpine-httpd-subversion_trac__Trac_init_entrypoint.sh
+      httpd -e DEBUG -D DO_TRAC -t'
+    depends_on:
+      - svn
+      - trac-db
+    environment:
+      _SERVERNAME: "trac.localdomain"
+      AUTH_LDAP_BIND_DN:
+      AUTH_LDAP_BIND_PASSWORD:
+      AUTH_LDAP_REQUIRE:
+      AUTH_LDAP_URL:
+      DB_HOST: "trac-db"
+      DB_NAME: "postgres"
+      DB_PORT: "5432"
+      DB_USER: "postgres"
+      PGPASSWORD:
+      SMTP_HOST:
+      SMTP_PASSWORD:
+      SMTP_PORT:
+      SMTP_USER:
+    extra_hosts:
+      - "trac.localdomain:127.0.0.1"
+    image: "registry.gitlab.com/clarin-eric/alpine-httpd-subversion_trac:5448268b37d5aafe3c3dd52057edd199305dfd50"
+    ports:
+      - "127.0.0.1:4432:4430"
+      - "127.0.0.1:84:8080"
+    tmpfs:
+      - "/tmp/:rw,noatime,nodev,noexec,mode=1777"
+      - "/run/apache2/:rw,gid=101,mode=700,noatime,nodev,uid=100"
+    volumes:
+      - "SVN_repos:/srv/subversion/:rw"
+      - "tls_certstore:/var/www/TLS_key_store/:rw"
+      - "Trac_dynamic_cfg:/var/www/dynamic_cfg/:rw"
+      - "Trac_instance:/srv/trac/:rw"
+    working_dir: "/srv/trac"
 
 volumes:
-  website_httpd_certstore:
+  tls_certstore:
     external: false
+  SVN_dynamic_cfg:
+    external: false
+  SVN_repos:
+    external: false
+  Trac_dynamic_cfg:
+      external: false
+  Trac_db:
+    external: false
+  Trac_instance:
+    external: false
+  website_httpd_dynamic_cfg:
+    external: false
+  website_httpd_htdocs:
+    external: false
+  var_mariadb:
+    external: false
+
+networks:
+  idm_demo_network:

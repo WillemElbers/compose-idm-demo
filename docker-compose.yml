@@ -4,6 +4,7 @@ services:
     environment:
       HOST: unity-idm:2443
     image: docker.clarin.eu/unity-idm:1.1.0
+    restart: unless-stopped
     networks:
       idm_demo_network:
         aliases:
@@ -18,11 +19,12 @@ services:
       - saml_metadata:/data/metadata:rw
 
   shibboleth-sp:
-    image: shibboleth/sp-demo:1.0.0
+    image: shibboleth/sp-demo:1.0.2
+    restart: unless-stopped
     ports:
-      - "80:80"
-      - "443:443"
-      - "8081:8080"
+      - "8081:80"
+      - "4431:443"
+      - "9090:8080"
     volumes:
       - saml_metadata:/data/metadata:rw
     networks:
@@ -35,45 +37,55 @@ services:
       DATABASE_USER: owncloud
       DATABASE_NAME: owncloud_db
       OWNCLOUD_ADMIN: admin
-      LDAP_HOST: unity-idm
-      LDAP_PORT: 10000
-      LDAP_USER_DN: uid=admin,ou=system
-      LDAP_BASE_DN: ou=system
-    image: docker.clarin.eu/owncloud:1.0.0
+      LDAP_HOST:
+      LDAP_PORT:
+      LDAP_USER_DN:
+      LDAP_BASE_DN:
+    image: docker.clarin.eu/owncloud:1.0.1
+    restart: unless-stopped
     networks:
       - idm_demo_network
     ports:
-      - "81:80"
-      - "444:443"
+      - "8082:80"
+      - "4432:443"
     volumes:
       - owncloud_mysql_data:/var/lib/mysql/:rw
-      #- owncloud_data:/var/www/html/:rw
+      - owncloud_data:/var/www/html/:rw
       - owncloud_initialisation:/opt/initialisation/:rw
       - /Users/wilelb/idm_demo_secrets:/opt/.secrets:rw
       - /Users/wilelb/Code/work/clarin/git/owncloud/debug/owncloud/apps/user_ldap/lib:/var/www/html/apps/user_ldap/lib:rw
 
   website:
     command: |
-      -ecx "dumb-init --single-child httpd -D FOREGROUND"
+      -ecx "
+      while ! echo exit | nc ${MARIADB_HOST} 3306 </dev/null; do echo 'waiting for database to become available'; sleep 1; done
+
+      dumb-init --single-child httpd -D FOREGROUND"
     entrypoint: /bin/sh
     depends_on:
       - mariadb
     image: "docker.clarin.eu/alpine-apache-drupal:0.8.2-0-g4112bc7"
+    restart: unless-stopped
     networks:
       - idm_demo_network
+    extra_hosts:
+      - "website.localdomain:127.0.0.1"
+      - "clarin.eu:127.0.0.1"
     ports:
-      - "82:80"
-      - "445:443"
+      - "8083:8080"
+      - "4430:4430"
     tmpfs:
       - "/tmp/:rw,noatime,nodev,noexec,mode=1777"
       - "/run/apache2/:rw,gid=101,mode=700,noatime,nodev,noexec,uid=100"
     read_only: true
-    user: "100:82"
+    user: "apache:www-data"
     volumes:
       - "website_httpd_htdocs:/var/www/localhost/htdocs/:rw"
       - "website_httpd_dynamic_cfg:/var/www/dynamic_cfg/:ro"
-      - "website_httpd_certstore:/var/www/TLS_key_store/:ro"
+      - "tls_certstore:/var/www/TLS_key_store/:ro"
     working_dir: "/var/www/localhost/htdocs/"
+    environment:
+      _SERVERNAME:
 
   mariadb:
     environment:
@@ -84,12 +96,74 @@ services:
     networks:
       - idm_demo_network
     image: "mariadb:10.1.16"
+    restart: unless-stopped
     tmpfs: "/tmp/:rw,noatime,nodev,noexec,mode=1777"
     tmpfs: "/run/:rw,noatime,nodev,noexec,mode=700"
     tmpfs: "/run/mysqld/:rw,gid=999,mode=700,noatime,nodev,noexec,uid=999"
     volumes:
       - "var_mariadb:/var/lib/mysql/:rw"
     working_dir: "/var/lib/mysql/"
+
+  svn:
+    command: --single-child -- httpd -D DO_SVN -D FOREGROUND
+    extra_hosts:
+      - "svn.localdomain:127.0.0.1"
+    image: "registry.gitlab.com/clarin-eric/alpine-httpd-subversion_trac:5448268b37d5aafe3c3dd52057edd199305dfd50"
+    restart: unless-stopped
+    networks:
+      - idm_demo_network
+    ports:
+      - "8084:8080"
+      - "4434:4430"
+    tmpfs:
+      - "/tmp/:rw,noatime,nodev,noexec,mode=1777"
+      - "/run/apache2/:rw,gid=101,mode=700,noatime,nodev,noexec,uid=100"
+    user: "apache:www-data"
+    volumes:
+      - "SVN_dynamic_cfg:/var/www/dynamic_cfg/:ro"
+      - "SVN_repos:/srv/subversion/:rw"
+      - "tls_certstore:/var/www/TLS_key_store/:ro"
+    working_dir: "/srv/subversion"
+    networks:
+      - idm_demo_network
+
+  trac-db:
+    environment:
+      POSTGRES_PASSWORD:
+    image: "postgres:9.5.3"
+    restart: unless-stopped
+    tmpfs: "/tmp/:rw,noatime,nodev,noexec,mode=1777"
+    tmpfs: "/run/postgres:rw,noatime,nodev,noexec,mode=700"
+    volumes:
+      - "Trac_db:/var/lib/postgresql/data:rw"
+    networks:
+      - idm_demo_network
+
+  trac:
+    command: --single-child -- httpd -D DO_TRAC -D FOREGROUND
+    depends_on:
+      - svn
+      - trac-db
+    extra_hosts:
+      - "trac.localdomain:127.0.0.1"
+    image: "registry.gitlab.com/clarin-eric/alpine-httpd-subversion_trac:5448268b37d5aafe3c3dd52057edd199305dfd50"
+    restart: unless-stopped
+    networks:
+      - idm_demo_network
+    ports:
+      - "8085:8080"
+      - "4435:4430"
+    read_only: true
+    tmpfs:
+      - "/tmp/:rw,noatime,nodev,noexec,mode=1777"
+      - "/run/apache2/:rw,gid=101,mode=700,noatime,nodev,noexec,uid=100"
+    user: "apache:www-data"
+    volumes:
+      - "SVN_repos:/srv/subversion/:rw"
+      - "tls_certstore:/var/www/TLS_key_store/:ro"
+      - "Trac_dynamic_cfg:/var/www/dynamic_cfg/:ro"
+      - "Trac_instance:/srv/trac/:rw"
+    working_dir: "/srv/trac"
 
 volumes:
   owncloud_mysql_data:
@@ -106,9 +180,19 @@ volumes:
     external: false
   website_httpd_htdocs:
     external: false
-  website_httpd_certstore: #Managed via initialiser
-    external: true
+  tls_certstore: #Managed via initialiser
+    external: false
   var_mariadb:
+    external: false
+  Trac_dynamic_cfg:
+      external: false
+  Trac_db:
+    external: false
+  Trac_instance:
+    external: false
+  SVN_dynamic_cfg:
+    external: false
+  SVN_repos:
     external: false
 
 networks:

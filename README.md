@@ -47,6 +47,26 @@ The docker containers are setup as follows:
               *****************                      
 ```
 
+## Services
+
+| Service  | Port  | Description    |
+| -------- | ----- | -------------- |
+| idm      |  2443 | HTTPS endpoint |
+|          | 10000 | LDAP  endpoint |
+|          | 10443 | LDAPS endpoint |
+|          |    22 | SSH   endpoint |
+| sp       |  8081 | HTTP  endpoint |
+|          |  4431 | HTTPS endpoint |
+|          |  9090 | Tomcat manager |
+| owncloud |  8082 | HTTP  endpoint |
+|          |  4432 | HTTPS endpoint |
+| website  |  8083 | HTTP  endpoint |
+|          |  4433 | HTTPS endpoint |
+| svn      |  8084 | HTTP  endpoint |
+|          |  4434 | HTTPS endpoint |
+| trac     |  8085 | HTTP  endpoint |
+|          |  4435 | HTTPS endpoint |
+
 # Run the demo
 
 ## Initialisation
@@ -88,9 +108,12 @@ _WARNING_: this will remove all data, including any customization you have made.
 Add the following to your hosts file (`/etc/hosts`):
 
 ```
-127.0.0.1 unity-idm
-127.0.0.1 shibboleth-sp
-127.0.0.1 owncloud
+127.0.0.1 idm.localdomain
+127.0.0.1 sp.localdomain
+127.0.0.1 owncloud.localdomain
+127.0.0.1 svn.localdomain
+127.0.0.1 trac.localdomain
+127.0.0.1 website.localdomain
 ```	
 
 ## 2. Configure unity registration form
@@ -135,4 +158,24 @@ This setup ensures that the IDP (unity-idm) always downloads the SP metadata fir
 
 ```
 ssh -f test@127.0.0.1 -L 5000:127.0.0.1:4000 -N -p 9000
+```
+
+# Test accounts
+
+unity admin:
+
+```
+admin:admin123
+```
+
+owncloud admin:
+
+```
+admin:password
+```
+
+unity user, this account can be used to login to all services:
+
+```
+test:test
 ```
