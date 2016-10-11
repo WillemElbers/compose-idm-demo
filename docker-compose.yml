@@ -3,7 +3,7 @@ services:
   unity-idm:
     environment:
       HOST: unity-idm:2443
-    image: docker.clarin.eu/unity-idm:1.1.0
+    image: ${UNITY_IDM_QUALIFIED_IMAGE}
     restart: unless-stopped
     networks:
       idm_demo_network:
@@ -19,7 +19,7 @@ services:
       - saml_metadata:/data/metadata:rw
 
   shibboleth-sp:
-    image: shibboleth/sp-demo:1.0.2
+    image: ${SHIBBOLETH_SP_QUALIFIED_IMAGE}
     restart: unless-stopped
     ports:
       - "8081:80"
@@ -41,13 +41,15 @@ services:
       LDAP_PORT:
       LDAP_USER_DN:
       LDAP_BASE_DN:
-    image: docker.clarin.eu/owncloud:1.0.1
+    image: ${OWNCLOUD_QUALIFIED_IMAGE}
     restart: unless-stopped
     networks:
       - idm_demo_network
     ports:
       - "8082:80"
       - "4432:443"
+    extra_hosts:
+      - "owncloud.localdomain:127.0.0.1"
     volumes:
       - owncloud_mysql_data:/var/lib/mysql/:rw
       - owncloud_data:/var/www/html/:rw
@@ -59,12 +61,11 @@ services:
     command: |
       -ecx "
       while ! echo exit | nc ${MARIADB_HOST} 3306 </dev/null; do echo 'waiting for database to become available'; sleep 1; done
-
       dumb-init --single-child httpd -D FOREGROUND"
     entrypoint: /bin/sh
     depends_on:
       - mariadb
-    image: "docker.clarin.eu/alpine-apache-drupal:0.8.2-0-g4112bc7"
+    image: ${WEBSITE_QUALIFIED_IMAGE}
     restart: unless-stopped
     networks:
       - idm_demo_network
@@ -73,7 +74,7 @@ services:
       - "clarin.eu:127.0.0.1"
     ports:
       - "8083:8080"
-      - "4430:4430"
+      - "4433:4430"
     tmpfs:
       - "/tmp/:rw,noatime,nodev,noexec,mode=1777"
       - "/run/apache2/:rw,gid=101,mode=700,noatime,nodev,noexec,uid=100"
@@ -81,34 +82,17 @@ services:
     user: "apache:www-data"
     volumes:
       - "website_httpd_htdocs:/var/www/localhost/htdocs/:rw"
-      - "website_httpd_dynamic_cfg:/var/www/dynamic_cfg/:ro"
+      - "website_httpd_dynamic_cfg:/var/www/dynamic_cfg/:rw"
       - "tls_certstore:/var/www/TLS_key_store/:ro"
     working_dir: "/var/www/localhost/htdocs/"
     environment:
-      _SERVERNAME:
-
-  mariadb:
-    environment:
-      MYSQL_DATABASE:
-      MYSQL_PASSWORD:
-      MYSQL_ROOT_PASSWORD:
-      MYSQL_USER:
-    networks:
-      - idm_demo_network
-    image: "mariadb:10.1.16"
-    restart: unless-stopped
-    tmpfs: "/tmp/:rw,noatime,nodev,noexec,mode=1777"
-    tmpfs: "/run/:rw,noatime,nodev,noexec,mode=700"
-    tmpfs: "/run/mysqld/:rw,gid=999,mode=700,noatime,nodev,noexec,uid=999"
-    volumes:
-      - "var_mariadb:/var/lib/mysql/:rw"
-    working_dir: "/var/lib/mysql/"
+      _SERVERNAME: ${WEBSITE_SERVERNAME}
 
   svn:
     command: --single-child -- httpd -D DO_SVN -D FOREGROUND
     extra_hosts:
       - "svn.localdomain:127.0.0.1"
-    image: "registry.gitlab.com/clarin-eric/alpine-httpd-subversion_trac:5448268b37d5aafe3c3dd52057edd199305dfd50"
+    image: ${SVN_TRAC_QUALIFIED_IMAGE}
     restart: unless-stopped
     networks:
       - idm_demo_network
@@ -127,18 +111,6 @@ services:
     networks:
       - idm_demo_network
 
-  trac-db:
-    environment:
-      POSTGRES_PASSWORD:
-    image: "postgres:9.5.3"
-    restart: unless-stopped
-    tmpfs: "/tmp/:rw,noatime,nodev,noexec,mode=1777"
-    tmpfs: "/run/postgres:rw,noatime,nodev,noexec,mode=700"
-    volumes:
-      - "Trac_db:/var/lib/postgresql/data:rw"
-    networks:
-      - idm_demo_network
-
   trac:
     command: --single-child -- httpd -D DO_TRAC -D FOREGROUND
     depends_on:
@@ -146,7 +118,7 @@ services:
       - trac-db
     extra_hosts:
       - "trac.localdomain:127.0.0.1"
-    image: "registry.gitlab.com/clarin-eric/alpine-httpd-subversion_trac:5448268b37d5aafe3c3dd52057edd199305dfd50"
+    image: ${SVN_TRAC_QUALIFIED_IMAGE}
     restart: unless-stopped
     networks:
       - idm_demo_network
@@ -164,6 +136,35 @@ services:
       - "Trac_dynamic_cfg:/var/www/dynamic_cfg/:ro"
       - "Trac_instance:/srv/trac/:rw"
     working_dir: "/srv/trac"
+
+  mariadb:
+    environment:
+      MYSQL_DATABASE:
+      MYSQL_PASSWORD:
+      MYSQL_ROOT_PASSWORD:
+      MYSQL_USER:
+    networks:
+      - idm_demo_network
+    image: "mariadb:10.1.16"
+    restart: unless-stopped
+    tmpfs: "/tmp/:rw,noatime,nodev,noexec,mode=1777"
+    tmpfs: "/run/:rw,noatime,nodev,noexec,mode=700"
+    tmpfs: "/run/mysqld/:rw,gid=999,mode=700,noatime,nodev,noexec,uid=999"
+    volumes:
+      - "var_mariadb:/var/lib/mysql/:rw"
+    working_dir: "/var/lib/mysql/"
+
+  trac-db:
+    environment:
+      POSTGRES_PASSWORD:
+    image: "postgres:9.5.3"
+    restart: unless-stopped
+    tmpfs: "/tmp/:rw,noatime,nodev,noexec,mode=1777"
+    tmpfs: "/run/postgres:rw,noatime,nodev,noexec,mode=700"
+    volumes:
+      - "Trac_db:/var/lib/postgresql/data:rw"
+    networks:
+      - idm_demo_network
 
 volumes:
   owncloud_mysql_data:

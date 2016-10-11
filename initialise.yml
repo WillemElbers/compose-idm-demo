@@ -1,55 +1,17 @@
 version: '2'
 services:
 
-  certificate_preparer:
-    command: |
-      -ecx "
-      echo '[req]' >> /tmp/apache.cert.conf
-      echo 'prompt=no' >> /tmp/apache.cert.conf
-      echo 'default_bits=2048' >> /tmp/apache.cert.conf
-      echo 'encrypt_key=no' >> /tmp/apache.cert.conf
-      echo 'default_md=sha2' >> /tmp/apache.cert.conf
-      echo 'distinguished_name=req_distinguished_name' >> /tmp/apache.cert.conf
-      echo 'string_mask=MASK:0002' >> /tmp/apache.cert.conf
-      echo '[req_distinguished_name]' >> /tmp/apache.cert.conf
-      echo '0.organizationName=website.test.clarin.eu' >> /tmp/apache.cert.conf
-      echo 'emailAddress=info@website.test.clarin.eu' >> /tmp/apache.cert.conf
-      echo 'countryName=EU' >> /tmp/apache.cert.conf
-      echo 'commonName=localhost' >> /tmp/apache.cert.conf
-      echo '[alt_names]' >> /tmp/apache.cert.conf
-      echo 'DNS.1 = localhost' >> /tmp/apache.cert.conf
-      test ! -e /var/www/TLS_key_store/bundle.pem && openssl req -config /tmp/apache.cert.conf -new -x509 -days 365 -keyout /var/www/TLS_key_store/private_nopass.key -out /var/www/TLS_key_store/bundle.pem
-      rm /tmp/apache.cert.conf
-      test ! -e /var/www/TLS_key_store/dhparam.pem && openssl dhparam -out /var/www/TLS_key_store/dhparam.pem 4096
-      chmod a=,u=rwX -Rc -- /var/www/TLS_key_store/
-      chown apache:apache -Rc -- /var/www/TLS_key_store/
-      echo "done" >> /var/www/TLS_key_store/initialised"
-    image: "docker.clarin.eu/alpine-apache-drupal:0.8.2-0-g4112bc7"
-    entrypoint: /bin/sh
-    tmpfs:
-      - "/tmp/:rw,noatime,nodev,noexec,mode=1777"
-      - "/run/apache2/:rw,gid=101,mode=700,noatime,nodev,uid=100"
-    volumes:
-      - "tls_certstore:/var/www/TLS_key_store/:rw"
-
   httpd_preparer:
     command: |
       -ecx "
       while  [ ! -f  '/var/www/TLS_key_store/initialised' ]; do echo 'waiting for certificate generation'; sleep 5; done
       while ! echo exit | nc ${MARIADB_HOST} 3306 </dev/null; do echo 'waiting for database to become available'; sleep 1; done
-      mutate_dynamic_httpd_cfg.py
-      find / -maxdepth 1 -type f -size 0 -delete
-      restore_drupal.py
-      unset -v -- MARIADB_HOST MYSQL_DATABASE MYSQL_PASSWORD MYSQL_USER
-      mutate_dynamic_httpd_cfg.py
-      httpd -e DEBUG -X &
-      sleep 2"
+      sh -x /usr/local/bin/alpine-httpd__init_entrypoint.sh
+      sh -x /usr/local/bin/alpine-httpd-drupal__init_entrypoint.sh"
     depends_on:
       - mariadb
-      - certificate_preparer
-    image: "docker.clarin.eu/alpine-apache-drupal:0.8.2-0-g4112bc7"
+    image: ${WEBSITE_QUALIFIED_IMAGE}
     extra_hosts:
-      - "${_SERVERNAME}:127.0.0.1"
       - "website.localdomain:127.0.0.1"
       - "clarin.eu:127.0.0.1"
     entrypoint: /bin/sh
@@ -57,8 +19,9 @@ services:
       MARIADB_HOST:
       MYSQL_DATABASE:
       MYSQL_PASSWORD:
+      MYSQL_ROOT_PASSWORD:
       MYSQL_USER:
-      _SERVERNAME:
+      _SERVERNAME:  ${WEBSITE_QUALIFIED_IMAGE}
     networks:
       - idm_demo_network
     tmpfs:
@@ -81,8 +44,6 @@ services:
       /usr/local/bin/alpine-httpd-subversion_trac__init_entrypoint.sh
       /usr/local/bin/alpine-httpd-subversion_trac__SVN_init_entrypoint.sh
       httpd -e DEBUG -D DO_SVN -t"
-    depends_on:
-      - certificate_preparer
     environment:
       _SERVERNAME: "svn.localdomain"
       AUTH_LDAP_BIND_DN:
@@ -91,7 +52,7 @@ services:
       AUTH_LDAP_URL:
     extra_hosts:
       - "svn.localdomain:127.0.0.1"
-    image: "registry.gitlab.com/clarin-eric/alpine-httpd-subversion_trac:5448268b37d5aafe3c3dd52057edd199305dfd50"
+    image: ${SVN_TRAC_QUALIFIED_IMAGE}
     network_mode: "none"
     tmpfs:
       - "/tmp/:rw,noatime,nodev,noexec,mode=1777"
@@ -123,7 +84,7 @@ services:
     command: --single-child -- httpd -D DO_SVN -D FOREGROUND
     extra_hosts:
       - "svn.localdomain:127.0.0.1"
-    image: "registry.gitlab.com/clarin-eric/alpine-httpd-subversion_trac:5448268b37d5aafe3c3dd52057edd199305dfd50"
+    image: ${SVN_TRAC_QUALIFIED_IMAGE}
     ports:
       - "127.0.0.1:4431:4430"
       - "127.0.0.1:83:8080"
@@ -175,7 +136,7 @@ services:
       SMTP_USER:
     extra_hosts:
       - "trac.localdomain:127.0.0.1"
-    image: "registry.gitlab.com/clarin-eric/alpine-httpd-subversion_trac:5448268b37d5aafe3c3dd52057edd199305dfd50"
+    image: ${SVN_TRAC_QUALIFIED_IMAGE}
     ports:
       - "127.0.0.1:4432:4430"
       - "127.0.0.1:84:8080"

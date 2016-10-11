@@ -75,6 +75,7 @@ If you are starting from scratch (no volumes), a one time initialisation step is
 ssl parameters for the website:
 
 ```
+sh -ace '. "./prod.sh" ; docker-compose -f initialise-certstore.yml -p idm-demo up'
 sh -ace '. "./prod.sh" ; docker-compose -f initialise.yml -p idm-demo up'
 ```
 
@@ -84,10 +85,16 @@ This is a list of commands used to manage the demo environment:
 
 ```
 # Create and start all services
-sh -ace '. "./prod.sh" ; docker-compose -p idm-demo up'
+sh -ace '. "./prod.sh" ; docker-compose -p idm-demo up -d'
 
 # Stop and remove all services
 docker-compose -p idm-demo down           
+
+# Connect and tail the logs
+docker-compose -p idm-demo tail -f
+
+# Tail the logs of a specific container (replace unity-idm with the container name)
+docker-compose -p idm-demo tail -f unity-idm
 ```
 
 ## Remove everything

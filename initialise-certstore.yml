@@ -1,0 +1,37 @@
+version: '2'
+services:
+
+  certificate_preparer:
+    command: |
+      -ecx "
+      echo '[req]' >> /tmp/apache.cert.conf
+      echo 'prompt=no' >> /tmp/apache.cert.conf
+      echo 'default_bits=2048' >> /tmp/apache.cert.conf
+      echo 'encrypt_key=no' >> /tmp/apache.cert.conf
+      echo 'default_md=sha2' >> /tmp/apache.cert.conf
+      echo 'distinguished_name=req_distinguished_name' >> /tmp/apache.cert.conf
+      echo 'string_mask=MASK:0002' >> /tmp/apache.cert.conf
+      echo '[req_distinguished_name]' >> /tmp/apache.cert.conf
+      echo '0.organizationName=website.test.clarin.eu' >> /tmp/apache.cert.conf
+      echo 'emailAddress=info@website.test.clarin.eu' >> /tmp/apache.cert.conf
+      echo 'countryName=EU' >> /tmp/apache.cert.conf
+      echo 'commonName=localhost' >> /tmp/apache.cert.conf
+      echo '[alt_names]' >> /tmp/apache.cert.conf
+      echo 'DNS.1 = localhost' >> /tmp/apache.cert.conf
+      test ! -e /var/www/TLS_key_store/bundle.pem && openssl req -config /tmp/apache.cert.conf -new -x509 -days 365 -keyout /var/www/TLS_key_store/private_nopass.key -out /var/www/TLS_key_store/bundle.pem
+      rm /tmp/apache.cert.conf
+      test ! -e /var/www/TLS_key_store/dhparam.pem && openssl dhparam -out /var/www/TLS_key_store/dhparam.pem 4096
+      chmod a=,u=rwX -Rc -- /var/www/TLS_key_store/
+      chown apache:apache -Rc -- /var/www/TLS_key_store/
+      echo "done" >> /var/www/TLS_key_store/initialised"
+    image: ${WEBSITE_QUALIFIED_IMAGE}
+    entrypoint: /bin/sh
+    tmpfs:
+      - "/tmp/:rw,noatime,nodev,noexec,mode=1777"
+      - "/run/apache2/:rw,gid=101,mode=700,noatime,nodev,uid=100"
+    volumes:
+      - "tls_certstore:/var/www/TLS_key_store/:rw"
+
+ volumes:
+  tls_certstore:
+    external: false
